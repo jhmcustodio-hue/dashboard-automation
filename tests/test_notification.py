@@ -1,5 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+import requests
+
 from dashboard_automation.notification import EmailNotifier, WebhookNotifier
 
 
@@ -54,3 +57,17 @@ def test_webhook_notifier_notify_failure_posts_error_text():
     _, kwargs = mock_post.call_args
     assert "[ERRO]" in kwargs["json"]["text"]
     assert "warehouse indisponível" in kwargs["json"]["text"]
+
+
+def test_webhook_notifier_notify_success_raises_on_non_2xx_response():
+    with patch("dashboard_automation.notification.requests.post") as mock_post:
+        mock_response = MagicMock()
+        mock_response.raise_for_status.side_effect = requests.HTTPError("400 Bad Request")
+        mock_post.return_value = mock_response
+
+        notifier = WebhookNotifier(webhook_url="https://hooks.slack.com/services/xyz")
+
+        with pytest.raises(requests.HTTPError):
+            notifier.notify_success(
+                "Comissões — Fechamento Mensal", "https://dashboards.empresa.com/comissoes-mensal"
+            )

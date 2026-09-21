@@ -43,10 +43,12 @@ class WebhookNotifier:
         self._webhook_url = webhook_url
 
     def notify_success(self, dashboard_nome: str, url: str) -> None:
-        requests.post(self._webhook_url, json={"text": f"Dashboard atualizado: {dashboard_nome}\n{url}"})
+        response = requests.post(self._webhook_url, json={"text": f"Dashboard atualizado: {dashboard_nome}\n{url}"})
+        response.raise_for_status()
 
     def notify_failure(self, dashboard_nome: str, error: str) -> None:
-        requests.post(
+        response = requests.post(
             self._webhook_url,
             json={"text": f"[ERRO] Falha ao gerar dashboard: {dashboard_nome}\n{error}"},
         )
+        response.raise_for_status()
