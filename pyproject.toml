@@ -1,0 +1,30 @@
+[project]
+name = "dashboard-automation"
+version = "0.1.0"
+description = "Pipeline automatizado de geração de dashboards HTML a partir de dados do Databricks"
+readme = "README.md"
+authors = [
+    { email = "jhm.custodio@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.7.0",
+    "azure-storage-blob>=12.30.2",
+    "databricks-sdk>=0.140.0",
+    "databricks-sql-connector>=4.5.0",
+    "pandas>=3.0.6",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+dashboard-automation = "dashboard_automation:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
