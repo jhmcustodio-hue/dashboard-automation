@@ -2,7 +2,12 @@ import pandas as pd
 import pytest
 
 from dashboard_automation.config import PromptConfig
-from dashboard_automation.generation import AnthropicGenerator, GenerationError, build_prompt
+from dashboard_automation.generation import (
+    AnthropicGenerator,
+    DatabricksModelServingGenerator,
+    GenerationError,
+    build_prompt,
+)
 
 
 def test_build_prompt_includes_template_instrucoes_and_data(tmp_path):
@@ -100,3 +105,73 @@ def test_anthropic_generator_strips_markdown_code_fence(tmp_path):
 def test_anthropic_generator_raises_when_response_has_no_html(tmp_path):
     with pytest.raises(GenerationError, match="não contém HTML válido"):
         _generate(tmp_path, "desculpe, não posso ajudar com isso")
+
+
+class _FakeServingMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _FakeServingChoice:
+    def __init__(self, content: str) -> None:
+        self.message = _FakeServingMessage(content)
+
+
+class _FakeServingResponse:
+    def __init__(self, content: str) -> None:
+        self.choices = [_FakeServingChoice(content)]
+
+
+class _FakeServingEndpoints:
+    def __init__(self, response_text: str) -> None:
+        self._response_text = response_text
+        self.calls: list[dict] = []
+
+    def query(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeServingResponse(self._response_text)
+
+
+class _FakeWorkspaceClient:
+    def __init__(self, response_text: str) -> None:
+        self.serving_endpoints = _FakeServingEndpoints(response_text)
+
+
+def test_databricks_model_serving_generator_returns_model_text_and_uses_endpoint(tmp_path):
+    template_path = tmp_path / "template.md"
+    template_path.write_text("Template.", encoding="utf-8")
+    data = pd.DataFrame({"a": [1]})
+    fake_client = _FakeWorkspaceClient(response_text="<html>ok</html>")
+
+    generator = DatabricksModelServingGenerator(
+        workspace_client=fake_client, endpoint_name="databricks-claude-sonnet-4-5"
+    )
+    result = generator.generate(PromptConfig(template=str(template_path)), data)
+
+    assert result == "<html>ok</html>"
+    assert fake_client.serving_endpoints.calls[0]["name"] == "databricks-claude-sonnet-4-5"
+    assert "Template." in fake_client.serving_endpoints.calls[0]["messages"][0]["content"]
+
+
+def test_databricks_model_serving_generator_strips_markdown_code_fence(tmp_path):
+    template_path = tmp_path / "template.md"
+    template_path.write_text("Template.", encoding="utf-8")
+    fake_client = _FakeWorkspaceClient(response_text="```html\n<html>ok</html>\n```")
+
+    generator = DatabricksModelServingGenerator(workspace_client=fake_client, endpoint_name="ep")
+    result = generator.generate(
+        PromptConfig(template=str(template_path)), pd.DataFrame({"a": [1]})
+    )
+
+    assert result == "<html>ok</html>"
+
+
+def test_databricks_model_serving_generator_raises_when_response_has_no_html(tmp_path):
+    template_path = tmp_path / "template.md"
+    template_path.write_text("Template.", encoding="utf-8")
+    fake_client = _FakeWorkspaceClient(response_text="não posso ajudar com isso")
+
+    generator = DatabricksModelServingGenerator(workspace_client=fake_client, endpoint_name="ep")
+
+    with pytest.raises(GenerationError, match="não contém HTML válido"):
+        generator.generate(PromptConfig(template=str(template_path)), pd.DataFrame({"a": [1]}))

@@ -7,7 +7,7 @@ include:
 artifacts:
   dashboard_automation:
     type: whl
-    build: uv build
+    build: uv build --wheel
     path: .
 
 targets:

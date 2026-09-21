@@ -28,6 +28,20 @@ def _job_resource(config: DashboardConfig, config_path: Path) -> dict:
                         "--trigger=schedule",
                     ],
                 },
+                "environment_key": "default",
+            }
+        ],
+        # Compute serverless em vez de cluster dedicado — o task acima referencia este
+        # ambiente por "environment_key", e "../dist/*.whl" resolve contra este arquivo
+        # (resources/dashboards.generated.yml), pegando o wheel buildado por `artifacts:`
+        # em databricks.yml. Mesmo padrão do template oficial `default_python` da Databricks.
+        "environments": [
+            {
+                "environment_key": "default",
+                "spec": {
+                    "environment_version": "4",
+                    "dependencies": ["../dist/*.whl"],
+                },
             }
         ],
     }

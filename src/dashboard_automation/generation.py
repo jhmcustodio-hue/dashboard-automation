@@ -37,6 +37,13 @@ def build_prompt(prompt: PromptConfig, data: pd.DataFrame) -> str:
     return "\n".join(parts)
 
 
+def _extract_and_validate_html(text: str) -> str:
+    html = _strip_code_fence(text)
+    if "<html" not in html.lower():
+        raise GenerationError("resposta do modelo não contém HTML válido")
+    return html
+
+
 class AnthropicGenerator:
     def __init__(self, client, model: str = "claude-sonnet-5") -> None:
         self._client = client
@@ -52,7 +59,22 @@ class AnthropicGenerator:
         if stop_reason in ("max_tokens", "refusal"):
             raise GenerationError(f"geração interrompida ({stop_reason}) — resposta descartada")
 
-        html = _strip_code_fence(message.content[0].text)
-        if "<html" not in html.lower():
-            raise GenerationError("resposta do modelo não contém HTML válido")
-        return html
+        return _extract_and_validate_html(message.content[0].text)
+
+
+class DatabricksModelServingGenerator:
+    """Gera o HTML chamando um serving endpoint do próprio workspace Databricks (ex.: Claude via
+    Foundation Model APIs) em vez da API da Anthropic — os dados não saem do perímetro do
+    Databricks, resolvendo a válvula de escape citada no "Gate de compliance" do design.
+    """
+
+    def __init__(self, workspace_client, endpoint_name: str) -> None:
+        self._workspace_client = workspace_client
+        self._endpoint_name = endpoint_name
+
+    def generate(self, prompt: PromptConfig, data: pd.DataFrame) -> str:
+        response = self._workspace_client.serving_endpoints.query(
+            name=self._endpoint_name,
+            messages=[{"role": "user", "content": build_prompt(prompt, data)}],
+        )
+        return _extract_and_validate_html(response.choices[0].message.content)

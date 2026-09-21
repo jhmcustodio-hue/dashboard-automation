@@ -4,6 +4,7 @@ import pytest
 
 from dashboard_automation import cli
 from dashboard_automation.config import GeracaoConfig, NotificacaoConfig
+from dashboard_automation.generation import DatabricksModelServingGenerator
 from dashboard_automation.pipeline import PipelineResult
 from dashboard_automation.publishing import AzureBlobPublisher, DatabricksNativePublisher
 
@@ -67,6 +68,18 @@ def test_build_executor_uses_databricks_warehouses_json_when_set(monkeypatch):
 def test_build_generator_unknown_backend_raises():
     with pytest.raises(ValueError, match="backend de geração desconhecido"):
         cli.build_generator(GeracaoConfig(backend="nao-existe"))
+
+
+def test_build_generator_databricks_model_serving():
+    fake_workspace_client = object()
+    with patch("dashboard_automation.cli.WorkspaceClient", return_value=fake_workspace_client):
+        generator = cli.build_generator(
+            GeracaoConfig(backend="databricks-model-serving", endpoint="databricks-claude-sonnet-4-5")
+        )
+
+    assert isinstance(generator, DatabricksModelServingGenerator)
+    assert generator._workspace_client is fake_workspace_client
+    assert generator._endpoint_name == "databricks-claude-sonnet-4-5"
 
 
 def test_build_publisher_unknown_destino_raises():

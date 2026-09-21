@@ -14,7 +14,7 @@ from databricks.sdk import WorkspaceClient
 
 from .config import DashboardConfig, GeracaoConfig, NotificacaoConfig, load_config
 from .extraction import DatabricksSQLExecutor
-from .generation import AnthropicGenerator
+from .generation import AnthropicGenerator, DatabricksModelServingGenerator, Generator
 from .notification import EmailNotifier, Notifier, WebhookNotifier
 from .pipeline import run_dashboard
 from .publishing import AzureBlobPublisher, DatabricksNativePublisher, Publisher
@@ -35,10 +35,14 @@ def build_executor() -> DatabricksSQLExecutor:
     )
 
 
-def build_generator(geracao: GeracaoConfig) -> AnthropicGenerator:
+def build_generator(geracao: GeracaoConfig) -> Generator:
     if geracao.backend == "anthropic":
         client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         return AnthropicGenerator(client=client, model=geracao.modelo)
+    if geracao.backend == "databricks-model-serving":
+        return DatabricksModelServingGenerator(
+            workspace_client=WorkspaceClient(), endpoint_name=geracao.endpoint
+        )
     raise ValueError(f"backend de geração desconhecido: {geracao.backend!r}")
 
 

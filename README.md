@@ -46,27 +46,50 @@ Nenhum passo acima exige alterar código Python — só o arquivo YAML do dashbo
 ## Pendências do bundle (antes do primeiro deploy real)
 
 `resources/dashboards.generated.yml` descreve os jobs, mas **não** é suficiente para um deploy
-funcional: o job falha ao rodar até que os itens abaixo sejam preenchidos para o workspace alvo.
-Nada disso é inferível deste repositório — depende de políticas de compute e de scopes de secret do
-workspace do operador.
+funcional: o job falha ao rodar até que o item abaixo seja preenchido para o workspace alvo. Não é
+inferível deste repositório — depende dos scopes de secret do workspace do operador.
 
-- **Compute**: a task não tem binding de compute. Adicione `job_cluster_key` (+ um `job_clusters`
-  com `new_cluster`), `existing_cluster_id`, ou um `environment_key` serverless, conforme a política
-  de compute do workspace.
-- **Wheel**: a task é `python_wheel_task`, mas não há entrada `libraries` anexando o wheel buildado
-  ao job — sem isso o pacote `dashboard_automation` não existe no cluster.
-- **Secrets**: Jobs do Databricks **não leem `.env`**. `ANTHROPIC_API_KEY`, `DATABRICKS_TOKEN`,
+- **Compute e wheel**: já resolvidos — cada job usa um `environment_key` serverless (bloco
+  `environments`, mesmo padrão do template oficial `default_python` da Databricks) referenciando o
+  wheel buildado por `artifacts:` em `databricks.yml` via `../dist/*.whl`. Nenhuma configuração
+  manual de cluster é necessária.
+- **Secrets**: Jobs do Databricks **não leem `.env`**. `ANTHROPIC_API_KEY` (ou nenhuma, se usar o
+  backend `databricks-model-serving` — ver "Backend de geração" abaixo), `DATABRICKS_TOKEN`,
   `AZURE_STORAGE_CONNECTION_STRING` e as `SMTP_*` precisam ser injetadas via Databricks secret
-  scopes (ex.: `spark_env_vars` / `{{secrets/<scope>/<chave>}}`), com o scope criado previamente.
+  scopes (ex.: um recurso `secret_scopes` no bundle + `{{secrets/<scope>/<chave>}}` nos parâmetros
+  ou variáveis do job), com o scope criado previamente.
 
 ## Gate de compliance
 
 Alguns dashboards podem conter dado sensível. **Nenhum dashboard com dado sensível deve ser
 publicado usando a Anthropic API diretamente em produção sem aprovação explícita de
-compliance/segurança** — seja aprovando o envio externo, seja optando por um caminho que mantenha o
-dado dentro do perímetro do Databricks (ex.: model serving interno, se disponível no workspace —
-confirmar com o time de plataforma/dados). Essa validação é um pré-requisito de rollout por
-dashboard, não algo resolvido pela arquitetura sozinha.
+compliance/segurança** — seja aprovando o envio externo, seja optando pelo backend
+`databricks-model-serving` (ver "Backend de geração" abaixo), que mantém o dado dentro do perímetro
+do Databricks. Essa validação é um pré-requisito de rollout por dashboard, não algo resolvido pela
+arquitetura sozinha.
+
+## Backend de geração
+
+Cada dashboard escolhe, via `geracao.backend` no YAML, qual serviço gera o HTML:
+
+```yaml
+geracao:
+  backend: "anthropic"          # padrão — chama a API da Anthropic direto
+  modelo: "claude-sonnet-5"      # só se aplica ao backend "anthropic"
+```
+
+ou, mantendo o dado dentro do perímetro do Databricks (exige um serving endpoint de Foundation
+Model já provisionado no workspace, ex.: um endpoint pay-per-token do Claude via `system.ai`):
+
+```yaml
+geracao:
+  backend: "databricks-model-serving"
+  endpoint: "databricks-claude-sonnet-4-5"   # nome do serving endpoint no workspace
+```
+
+Omitir `geracao` inteiramente equivale ao padrão (`anthropic` + `claude-sonnet-5`) — dashboards já
+existentes não precisam de nenhuma mudança. Trocar de backend é só uma mudança no YAML do dashboard,
+nunca uma mudança de código.
 
 ## Publicação: Azure Blob vs. Databricks nativo
 
@@ -98,9 +121,10 @@ pipeline:
 
 ## Próximos passos (fora do escopo desta fase)
 
-- **Completar o bundle gerado para o workspace alvo** — binding de compute, `libraries` com o wheel
-  e injeção de secrets via secret scopes. Sem isso o `databricks bundle deploy` produz um job que
-  não roda. Detalhes em "Pendências do bundle" acima; exige acesso a um workspace real.
+- **Injetar os secrets do bundle para o workspace alvo** — compute e wheel já estão resolvidos
+  (bloco `environments` serverless), mas os secrets (`ANTHROPIC_API_KEY`/`DATABRICKS_TOKEN`/etc)
+  ainda precisam de um secret scope criado no workspace real. Detalhes em "Pendências do bundle"
+  acima; exige acesso a um workspace real.
 - Self-service: permitir que um solicitante não-técnico peça um dashboard novo em linguagem
   natural, sem escrever a query SQL manualmente (exigiria um sistema de texto-para-SQL com
   guardrails próprios — deliberadamente fora desta Fase 1, ver design doc).

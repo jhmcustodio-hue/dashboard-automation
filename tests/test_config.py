@@ -156,3 +156,46 @@ publicacao:
 
     with pytest.raises(ValueError, match="backend de geração inválido"):
         load_config(path)
+
+
+def test_load_config_parses_databricks_model_serving_geracao(tmp_path):
+    path = _write(tmp_path, """
+id: x
+nome: "X"
+query:
+  sql: "SELECT 1"
+  warehouse: "w"
+geracao:
+  backend: "databricks-model-serving"
+  endpoint: "databricks-claude-sonnet-4-5"
+prompt:
+  template: "templates/t.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "x"
+""")
+
+    config = load_config(path)
+
+    assert config.geracao.backend == "databricks-model-serving"
+    assert config.geracao.endpoint == "databricks-claude-sonnet-4-5"
+
+
+def test_load_config_rejects_databricks_model_serving_without_endpoint(tmp_path):
+    path = _write(tmp_path, """
+id: x
+nome: "X"
+query:
+  sql: "SELECT 1"
+  warehouse: "w"
+geracao:
+  backend: "databricks-model-serving"
+prompt:
+  template: "templates/t.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "x"
+""")
+
+    with pytest.raises(ValueError, match="geracao.endpoint é obrigatório"):
+        load_config(path)

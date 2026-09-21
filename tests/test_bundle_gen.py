@@ -53,9 +53,17 @@ publicacao:
     job = result["resources"]["jobs"]["dashboard_comissoes_mensal"]
     assert job["schedule"]["quartz_cron_expression"] == "0 0 7 1 * ?"
     assert job["schedule"]["pause_status"] == "PAUSED"
-    parameters = job["tasks"][0]["python_wheel_task"]["parameters"]
+    task = job["tasks"][0]
+    parameters = task["python_wheel_task"]["parameters"]
     assert parameters[0] == "${workspace.file_path}/dashboards/com-schedule.yaml"
     assert parameters[1] == "--trigger=schedule"
+    assert task["environment_key"] == "default"
+    assert job["environments"] == [
+        {
+            "environment_key": "default",
+            "spec": {"environment_version": "4", "dependencies": ["../dist/*.whl"]},
+        }
+    ]
 
 
 def test_generate_jobs_yaml_unpauses_when_schedule_enabled(tmp_path):

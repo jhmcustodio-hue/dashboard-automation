@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 VALID_DESTINOS = {"azure-blob", "databricks-native"}
-VALID_GERACAO_BACKENDS = {"anthropic"}
+VALID_GERACAO_BACKENDS = {"anthropic", "databricks-model-serving"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -23,8 +23,13 @@ class ScheduleConfig:
 
 @dataclasses.dataclass(frozen=True)
 class GeracaoConfig:
+    # "modelo" só se aplica ao backend "anthropic" (nome do modelo na API da Anthropic).
+    # "endpoint" só se aplica ao backend "databricks-model-serving" (nome do serving endpoint
+    # no workspace, ex.: "databricks-claude-sonnet-4-5") — mantém o dado dentro do perímetro
+    # do Databricks em vez de chamar a API da Anthropic diretamente (ver "Gate de compliance").
     backend: str = "anthropic"
     modelo: str = "claude-sonnet-5"
+    endpoint: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,6 +81,11 @@ def load_config(path: Path | str) -> DashboardConfig:
         raise ValueError(
             f"backend de geração inválido: {geracao.backend!r} "
             f"(esperado um de {sorted(VALID_GERACAO_BACKENDS)})"
+        )
+    if geracao.backend == "databricks-model-serving" and not geracao.endpoint:
+        raise ValueError(
+            "geracao.endpoint é obrigatório quando geracao.backend é "
+            "'databricks-model-serving' (nome do serving endpoint no workspace)"
         )
 
     # Todo config real mora em <project_root>/dashboards/<id>.yaml, e os templates em
