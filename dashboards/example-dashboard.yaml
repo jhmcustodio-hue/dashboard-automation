@@ -1,0 +1,18 @@
+id: exemplo-vendas-mensal
+nome: "Exemplo — Vendas Mensais"
+query:
+  sql: "SELECT mes, total_vendas FROM vendas.resumo_mensal ORDER BY mes"
+  warehouse: "warehouse-principal"
+schedule:
+  cron: "0 0 7 1 * ?"
+  enabled: false
+prompt:
+  template: "templates/insights-padrao.md"
+  instrucoes_extra: "Destaque meses com queda maior que 10% em relação ao mês anterior."
+publicacao:
+  destino: "azure-blob"
+  slug: "exemplo-vendas-mensal"
+notificacao:
+  email: []
+  slack_webhook: null
+  teams_webhook: null
