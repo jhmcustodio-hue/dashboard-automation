@@ -12,5 +12,5 @@ resources:
           package_name: dashboard_automation
           entry_point: run-dashboard
           parameters:
-          - /Users/henrique/dashboard-automation/dashboards/example-dashboard.yaml
+          - ${workspace.file_path}/dashboards/example-dashboard.yaml
           - --trigger=schedule

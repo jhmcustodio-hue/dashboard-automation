@@ -23,7 +23,10 @@ def _job_resource(config: DashboardConfig, config_path: Path) -> dict:
                 "python_wheel_task": {
                     "package_name": "dashboard_automation",
                     "entry_point": "run-dashboard",
-                    "parameters": [str(config_path), "--trigger=schedule"],
+                    "parameters": [
+                        f"${{workspace.file_path}}/dashboards/{config_path.name}",
+                        "--trigger=schedule",
+                    ],
                 },
             }
         ],

@@ -54,7 +54,7 @@ publicacao:
     assert job["schedule"]["quartz_cron_expression"] == "0 0 7 1 * ?"
     assert job["schedule"]["pause_status"] == "PAUSED"
     parameters = job["tasks"][0]["python_wheel_task"]["parameters"]
-    assert parameters[0].endswith("com-schedule.yaml")
+    assert parameters[0] == "${workspace.file_path}/dashboards/com-schedule.yaml"
     assert parameters[1] == "--trigger=schedule"
 
 
