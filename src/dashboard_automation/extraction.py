@@ -24,7 +24,13 @@ class DatabricksSQLExecutor:
         self._access_token = access_token
 
     def execute(self, query: QueryConfig) -> pd.DataFrame:
-        http_path = self._http_path_by_warehouse[query.warehouse]
+        try:
+            http_path = self._http_path_by_warehouse[query.warehouse]
+        except KeyError:
+            raise KeyError(
+                f"warehouse {query.warehouse!r} não configurado "
+                f"(configurados: {sorted(self._http_path_by_warehouse)})"
+            ) from None
         with sql.connect(
             server_hostname=self._server_hostname,
             http_path=http_path,

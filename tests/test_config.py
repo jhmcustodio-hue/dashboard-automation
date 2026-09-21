@@ -6,7 +6,12 @@ from dashboard_automation.config import load_config
 
 
 def _write(tmp_path: Path, content: str) -> Path:
-    path = tmp_path / "dashboard.yaml"
+    # tmp_path faz o papel da raiz do projeto: configs reais moram em
+    # <project_root>/dashboards/<id>.yaml, e é contra essa raiz que load_config
+    # resolve o caminho do template.
+    dashboards_dir = tmp_path / "dashboards"
+    dashboards_dir.mkdir(exist_ok=True)
+    path = dashboards_dir / "dashboard.yaml"
     path.write_text(content, encoding="utf-8")
     return path
 
@@ -31,7 +36,7 @@ publicacao:
     assert config.nome == "Comissões — Fechamento Mensal"
     assert config.query.sql == "SELECT 1"
     assert config.query.warehouse == "meu-warehouse"
-    assert config.prompt.template == "templates/insights-padrao.md"
+    assert config.prompt.template == str((tmp_path / "templates" / "insights-padrao.md").resolve())
     assert config.prompt.instrucoes_extra is None
     assert config.publicacao.destino == "azure-blob"
     assert config.publicacao.slug == "comissoes-mensal"
@@ -67,6 +72,7 @@ notificacao:
 
     assert config.schedule.cron == "0 0 7 1 * ?"
     assert config.schedule.enabled is True
+    assert config.prompt.template == str((tmp_path / "templates" / "insights-padrao.md").resolve())
     assert config.prompt.instrucoes_extra == "Destaque quedas > 10%"
     assert config.notificacao.email == ["time@empresa.com"]
     assert config.notificacao.slack_webhook == "https://hooks.slack.com/services/xyz"
@@ -87,4 +93,66 @@ publicacao:
 """)
 
     with pytest.raises(ValueError, match="destino inválido"):
+        load_config(path)
+
+
+def test_load_config_geracao_defaults_to_anthropic_when_absent(tmp_path):
+    path = _write(tmp_path, """
+id: x
+nome: "X"
+query:
+  sql: "SELECT 1"
+  warehouse: "w"
+prompt:
+  template: "templates/t.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "x"
+""")
+
+    config = load_config(path)
+
+    assert config.geracao.backend == "anthropic"
+    assert config.geracao.modelo == "claude-sonnet-5"
+
+
+def test_load_config_parses_custom_geracao_modelo(tmp_path):
+    path = _write(tmp_path, """
+id: x
+nome: "X"
+query:
+  sql: "SELECT 1"
+  warehouse: "w"
+geracao:
+  modelo: "claude-opus-5"
+prompt:
+  template: "templates/t.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "x"
+""")
+
+    config = load_config(path)
+
+    assert config.geracao.backend == "anthropic"
+    assert config.geracao.modelo == "claude-opus-5"
+
+
+def test_load_config_rejects_invalid_geracao_backend(tmp_path):
+    path = _write(tmp_path, """
+id: x
+nome: "X"
+query:
+  sql: "SELECT 1"
+  warehouse: "w"
+geracao:
+  backend: "nao-existe"
+prompt:
+  template: "templates/t.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "x"
+""")
+
+    with pytest.raises(ValueError, match="backend de geração inválido"):
         load_config(path)

@@ -8,8 +8,24 @@ import pandas as pd
 from .config import PromptConfig
 
 
+class GenerationError(Exception):
+    pass
+
+
 class Generator(Protocol):
     def generate(self, prompt: PromptConfig, data: pd.DataFrame) -> str: ...
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    return stripped
 
 
 def build_prompt(prompt: PromptConfig, data: pd.DataFrame) -> str:
@@ -29,7 +45,14 @@ class AnthropicGenerator:
     def generate(self, prompt: PromptConfig, data: pd.DataFrame) -> str:
         message = self._client.messages.create(
             model=self._model,
-            max_tokens=8192,
+            max_tokens=16000,
             messages=[{"role": "user", "content": build_prompt(prompt, data)}],
         )
-        return message.content[0].text
+        stop_reason = getattr(message, "stop_reason", None)
+        if stop_reason in ("max_tokens", "refusal"):
+            raise GenerationError(f"geração interrompida ({stop_reason}) — resposta descartada")
+
+        html = _strip_code_fence(message.content[0].text)
+        if "<html" not in html.lower():
+            raise GenerationError("resposta do modelo não contém HTML válido")
+        return html

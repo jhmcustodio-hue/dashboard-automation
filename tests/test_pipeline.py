@@ -196,3 +196,33 @@ def test_run_dashboard_all_attempts_fail_notifies_and_raises_without_publishing_
     assert publisher.latest == []
     assert len(notifier.failures) == 1
     assert notifier.failures[0][0] == "Comissões — Fechamento Mensal"
+
+
+class _RaisingNotifier:
+    def notify_success(self, dashboard_nome, url):
+        raise RuntimeError("webhook fora do ar")
+
+    def notify_failure(self, dashboard_nome, error):
+        pass
+
+
+def test_notify_all_logs_when_a_notifier_raises(caplog):
+    config = _make_config()
+    executor = _FakeExecutor()
+    publisher = _FakePublisher()
+
+    with caplog.at_level("ERROR"):
+        result = run_dashboard(
+            config=config,
+            executor=executor,
+            generator=_FakeGenerator(),
+            publisher=publisher,
+            notifiers=[_RaisingNotifier()],
+            now=dt.datetime(2026, 9, 21, 7, 0),
+        )
+
+    assert result.url == "comissoes-mensal/index.html"
+    assert any(
+        "notify_success" in record.getMessage() and "_RaisingNotifier" in record.getMessage()
+        for record in caplog.records
+    )

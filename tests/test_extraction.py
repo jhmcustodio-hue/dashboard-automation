@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from dashboard_automation.config import QueryConfig
 from dashboard_automation.extraction import DatabricksSQLExecutor
@@ -36,3 +37,18 @@ def test_execute_runs_query_on_correct_warehouse_and_returns_dataframe():
     )
     mock_cursor.execute.assert_called_once_with("SELECT 1")
     pd.testing.assert_frame_equal(result, expected_df)
+
+
+def test_execute_raises_actionable_error_for_unknown_warehouse():
+    executor = DatabricksSQLExecutor(
+        server_hostname="adb-123.azuredatabricks.net",
+        http_path_by_warehouse={"meu-warehouse": "/sql/1.0/warehouses/abc123"},
+        access_token="fake-token",
+    )
+
+    with pytest.raises(KeyError) as exc_info:
+        executor.execute(QueryConfig(sql="SELECT 1", warehouse="warehouse-de-vendas"))
+
+    message = str(exc_info.value)
+    assert "warehouse-de-vendas" in message
+    assert "meu-warehouse" in message

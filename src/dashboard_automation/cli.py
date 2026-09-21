@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
+import logging
 import os
 import smtplib
 from pathlib import Path
@@ -10,7 +12,7 @@ import anthropic
 from azure.storage.blob import BlobServiceClient
 from databricks.sdk import WorkspaceClient
 
-from .config import DashboardConfig, NotificacaoConfig, load_config
+from .config import DashboardConfig, GeracaoConfig, NotificacaoConfig, load_config
 from .extraction import DatabricksSQLExecutor
 from .generation import AnthropicGenerator
 from .notification import EmailNotifier, Notifier, WebhookNotifier
@@ -19,18 +21,25 @@ from .publishing import AzureBlobPublisher, DatabricksNativePublisher, Publisher
 
 
 def build_executor() -> DatabricksSQLExecutor:
+    warehouses_json = os.environ.get("DATABRICKS_WAREHOUSES")
+    if warehouses_json:
+        http_path_by_warehouse = json.loads(warehouses_json)
+    else:
+        http_path_by_warehouse = {
+            os.environ["DATABRICKS_WAREHOUSE_NAME"]: os.environ["DATABRICKS_HTTP_PATH"]
+        }
     return DatabricksSQLExecutor(
         server_hostname=os.environ["DATABRICKS_SERVER_HOSTNAME"],
-        http_path_by_warehouse={
-            os.environ["DATABRICKS_WAREHOUSE_NAME"]: os.environ["DATABRICKS_HTTP_PATH"]
-        },
+        http_path_by_warehouse=http_path_by_warehouse,
         access_token=os.environ["DATABRICKS_TOKEN"],
     )
 
 
-def build_generator() -> AnthropicGenerator:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    return AnthropicGenerator(client=client)
+def build_generator(geracao: GeracaoConfig) -> AnthropicGenerator:
+    if geracao.backend == "anthropic":
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        return AnthropicGenerator(client=client, model=geracao.modelo)
+    raise ValueError(f"backend de geração desconhecido: {geracao.backend!r}")
 
 
 def build_publisher(destino: str) -> Publisher:
@@ -41,9 +50,16 @@ def build_publisher(destino: str) -> Publisher:
         container_client = service_client.get_container_client(
             os.environ["AZURE_STORAGE_CONTAINER"]
         )
-        return AzureBlobPublisher(container_client=container_client)
+        return AzureBlobPublisher(
+            container_client=container_client,
+            base_url=os.environ.get("AZURE_STORAGE_PUBLIC_BASE_URL"),
+        )
     if destino == "databricks-native":
-        return DatabricksNativePublisher(workspace_client=WorkspaceClient())
+        hostname = os.environ.get("DATABRICKS_SERVER_HOSTNAME")
+        return DatabricksNativePublisher(
+            workspace_client=WorkspaceClient(),
+            workspace_host=f"https://{hostname}" if hostname else None,
+        )
     raise ValueError(f"destino de publicação desconhecido: {destino!r}")
 
 
@@ -68,6 +84,9 @@ def build_notifiers(notificacao: NotificacaoConfig) -> list[Notifier]:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     parser = argparse.ArgumentParser(
         description="Roda o pipeline de um dashboard a partir de um config YAML."
     )
@@ -79,7 +98,7 @@ def main() -> None:
     result = run_dashboard(
         config=config,
         executor=build_executor(),
-        generator=build_generator(),
+        generator=build_generator(config.geracao),
         publisher=build_publisher(config.publicacao.destino),
         notifiers=build_notifiers(config.notificacao),
         now=dt.datetime.utcnow(),

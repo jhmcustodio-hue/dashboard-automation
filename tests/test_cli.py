@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from dashboard_automation import cli
-from dashboard_automation.config import NotificacaoConfig
+from dashboard_automation.config import GeracaoConfig, NotificacaoConfig
 from dashboard_automation.pipeline import PipelineResult
 from dashboard_automation.publishing import AzureBlobPublisher, DatabricksNativePublisher
 
@@ -32,6 +32,41 @@ def test_build_publisher_databricks_native():
 
     assert isinstance(publisher, DatabricksNativePublisher)
     assert publisher._workspace_client is fake_workspace_client
+
+
+def test_build_executor_uses_single_warehouse_env_vars_by_default(monkeypatch):
+    monkeypatch.delenv("DATABRICKS_WAREHOUSES", raising=False)
+    monkeypatch.setenv("DATABRICKS_SERVER_HOSTNAME", "adb-123.azuredatabricks.net")
+    monkeypatch.setenv("DATABRICKS_WAREHOUSE_NAME", "warehouse-principal")
+    monkeypatch.setenv("DATABRICKS_HTTP_PATH", "/sql/1.0/warehouses/abc123")
+    monkeypatch.setenv("DATABRICKS_TOKEN", "fake-token")
+
+    executor = cli.build_executor()
+
+    assert executor._http_path_by_warehouse == {
+        "warehouse-principal": "/sql/1.0/warehouses/abc123"
+    }
+
+
+def test_build_executor_uses_databricks_warehouses_json_when_set(monkeypatch):
+    monkeypatch.setenv("DATABRICKS_SERVER_HOSTNAME", "adb-123.azuredatabricks.net")
+    monkeypatch.setenv("DATABRICKS_TOKEN", "fake-token")
+    monkeypatch.setenv(
+        "DATABRICKS_WAREHOUSES",
+        '{"principal": "/sql/1.0/warehouses/abc123", "vendas": "/sql/1.0/warehouses/def456"}',
+    )
+
+    executor = cli.build_executor()
+
+    assert executor._http_path_by_warehouse == {
+        "principal": "/sql/1.0/warehouses/abc123",
+        "vendas": "/sql/1.0/warehouses/def456",
+    }
+
+
+def test_build_generator_unknown_backend_raises():
+    with pytest.raises(ValueError, match="backend de geração desconhecido"):
+        cli.build_generator(GeracaoConfig(backend="nao-existe"))
 
 
 def test_build_publisher_unknown_destino_raises():
@@ -78,7 +113,7 @@ publicacao:
     fake_result = PipelineResult(dashboard_id="comissoes-mensal", url="comissoes-mensal/index.html")
 
     monkeypatch.setattr(cli, "build_executor", lambda: object())
-    monkeypatch.setattr(cli, "build_generator", lambda: object())
+    monkeypatch.setattr(cli, "build_generator", lambda geracao: object())
     monkeypatch.setattr(cli, "build_publisher", lambda destino: object())
     monkeypatch.setattr(cli, "build_notifiers", lambda notificacao: [])
     monkeypatch.setattr(cli, "run_dashboard", lambda **kwargs: fake_result)

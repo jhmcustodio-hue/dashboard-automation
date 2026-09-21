@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 VALID_DESTINOS = {"azure-blob", "databricks-native"}
+VALID_GERACAO_BACKENDS = {"anthropic"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -21,7 +22,15 @@ class ScheduleConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class GeracaoConfig:
+    backend: str = "anthropic"
+    modelo: str = "claude-sonnet-5"
+
+
+@dataclasses.dataclass(frozen=True)
 class PromptConfig:
+    # Depois de passar por `load_config`, `template` é sempre um caminho absoluto
+    # (resolvido contra a raiz do projeto, não contra o CWD do processo).
     template: str
     instrucoes_extra: str | None = None
 
@@ -48,6 +57,7 @@ class DashboardConfig:
     publicacao: PublicacaoConfig
     notificacao: NotificacaoConfig
     schedule: ScheduleConfig = dataclasses.field(default_factory=ScheduleConfig)
+    geracao: GeracaoConfig = dataclasses.field(default_factory=GeracaoConfig)
 
 
 def load_config(path: Path | str) -> DashboardConfig:
@@ -61,12 +71,27 @@ def load_config(path: Path | str) -> DashboardConfig:
             f"(esperado um de {sorted(VALID_DESTINOS)})"
         )
 
+    geracao = GeracaoConfig(**raw.get("geracao", {}))
+    if geracao.backend not in VALID_GERACAO_BACKENDS:
+        raise ValueError(
+            f"backend de geração inválido: {geracao.backend!r} "
+            f"(esperado um de {sorted(VALID_GERACAO_BACKENDS)})"
+        )
+
+    # Todo config real mora em <project_root>/dashboards/<id>.yaml, e os templates em
+    # <project_root>/templates/... — logo a raiz do projeto é o avô do arquivo de config.
+    # Resolver aqui (e não em generation.py) torna o caminho independente do CWD do processo.
+    project_root = Path(path).resolve().parent.parent
+    prompt_raw = dict(raw["prompt"])
+    prompt_raw["template"] = str((project_root / prompt_raw["template"]).resolve())
+
     return DashboardConfig(
         id=raw["id"],
         nome=raw["nome"],
         query=QueryConfig(**raw["query"]),
         schedule=ScheduleConfig(**raw.get("schedule", {})),
-        prompt=PromptConfig(**raw["prompt"]),
+        geracao=geracao,
+        prompt=PromptConfig(**prompt_raw),
         publicacao=PublicacaoConfig(**publicacao_raw),
         notificacao=NotificacaoConfig(**raw.get("notificacao", {})),
     )
