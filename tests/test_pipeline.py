@@ -110,6 +110,72 @@ def test_run_dashboard_retries_and_succeeds_on_second_attempt():
     assert result.url == "comissoes-mensal/index.html"
 
 
+class _RaisingSuccessNotifier:
+    def __init__(self) -> None:
+        self.success_calls = 0
+
+    def notify_success(self, dashboard_nome, url):
+        self.success_calls += 1
+        raise RuntimeError("webhook indisponível")
+
+    def notify_failure(self, dashboard_nome, error):
+        raise AssertionError("notify_failure não deveria ser chamado em um pipeline bem-sucedido")
+
+
+def test_run_dashboard_notify_success_failure_does_not_trigger_retry_or_raise():
+    config = _make_config()
+    executor = _FakeExecutor()
+    publisher = _FakePublisher()
+    raising_notifier = _RaisingSuccessNotifier()
+
+    result = run_dashboard(
+        config=config,
+        executor=executor,
+        generator=_FakeGenerator(),
+        publisher=publisher,
+        notifiers=[raising_notifier],
+        max_attempts=2,
+        now=dt.datetime(2026, 9, 21, 7, 0),
+    )
+
+    assert result == PipelineResult(dashboard_id="comissoes-mensal", url="comissoes-mensal/index.html")
+    assert executor.calls == 1
+    assert len(publisher.archived) == 1
+    assert len(publisher.latest) == 1
+    assert raising_notifier.success_calls == 1
+
+
+class _RaisingFailureNotifier:
+    def notify_success(self, dashboard_nome, url):
+        raise AssertionError("notify_success não deveria ser chamado em um pipeline com falha total")
+
+    def notify_failure(self, dashboard_nome, error):
+        raise RuntimeError("webhook indisponível")
+
+
+def test_run_dashboard_notify_failure_failure_does_not_block_other_notifiers_or_mask_error():
+    config = _make_config()
+    executor = _FakeExecutor(fail_times=99)
+    publisher = _FakePublisher()
+    raising_notifier = _RaisingFailureNotifier()
+    other_notifier = _FakeNotifier()
+
+    with pytest.raises(PipelineError):
+        run_dashboard(
+            config=config,
+            executor=executor,
+            generator=_FakeGenerator(),
+            publisher=publisher,
+            notifiers=[raising_notifier, other_notifier],
+            max_attempts=2,
+            now=dt.datetime(2026, 9, 21, 7, 0),
+        )
+
+    assert publisher.latest == []
+    assert len(other_notifier.failures) == 1
+    assert other_notifier.failures[0][0] == "Comissões — Fechamento Mensal"
+
+
 def test_run_dashboard_all_attempts_fail_notifies_and_raises_without_publishing_latest():
     config = _make_config()
     executor = _FakeExecutor(fail_times=99)
