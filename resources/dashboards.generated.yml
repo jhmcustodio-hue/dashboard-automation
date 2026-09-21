@@ -1,0 +1,16 @@
+resources:
+  jobs:
+    dashboard_exemplo_vendas_mensal:
+      name: 'Dashboard: Exemplo — Vendas Mensais'
+      schedule:
+        quartz_cron_expression: 0 0 7 1 * ?
+        timezone_id: America/Sao_Paulo
+        pause_status: PAUSED
+      tasks:
+      - task_key: run_dashboard
+        python_wheel_task:
+          package_name: dashboard_automation
+          entry_point: run-dashboard
+          parameters:
+          - /Users/henrique/dashboard-automation/dashboards/example-dashboard.yaml
+          - --trigger=schedule

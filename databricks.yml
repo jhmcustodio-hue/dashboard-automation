@@ -1,0 +1,18 @@
+bundle:
+  name: dashboard-automation
+
+include:
+  - resources/*.yml
+
+artifacts:
+  dashboard_automation:
+    type: whl
+    build: uv build
+    path: .
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production
