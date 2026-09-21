@@ -17,6 +17,9 @@ dependencies = [
     "requests>=2.34.2",
 ]
 
+[project.scripts]
+run-dashboard = "dashboard_automation.cli:main"
+
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"

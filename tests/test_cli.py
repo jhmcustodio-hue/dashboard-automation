@@ -1,0 +1,90 @@
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from dashboard_automation import cli
+from dashboard_automation.config import NotificacaoConfig
+from dashboard_automation.pipeline import PipelineResult
+from dashboard_automation.publishing import AzureBlobPublisher, DatabricksNativePublisher
+
+
+def test_build_publisher_azure_blob(monkeypatch):
+    monkeypatch.setenv("AZURE_STORAGE_CONNECTION_STRING", "fake-conn-string")
+    monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "dashboards")
+    fake_container_client = object()
+    fake_service_client = MagicMock()
+    fake_service_client.get_container_client.return_value = fake_container_client
+
+    with patch(
+        "dashboard_automation.cli.BlobServiceClient.from_connection_string",
+        return_value=fake_service_client,
+    ):
+        publisher = cli.build_publisher("azure-blob")
+
+    assert isinstance(publisher, AzureBlobPublisher)
+    assert publisher._container_client is fake_container_client
+
+
+def test_build_publisher_databricks_native():
+    fake_workspace_client = object()
+    with patch("dashboard_automation.cli.WorkspaceClient", return_value=fake_workspace_client):
+        publisher = cli.build_publisher("databricks-native")
+
+    assert isinstance(publisher, DatabricksNativePublisher)
+    assert publisher._workspace_client is fake_workspace_client
+
+
+def test_build_publisher_unknown_destino_raises():
+    with pytest.raises(ValueError, match="desconhecido"):
+        cli.build_publisher("ftp")
+
+
+def test_build_notifiers_creates_email_and_slack(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.empresa.com")
+    monkeypatch.setenv("SMTP_USER", "bot@empresa.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "fake-password")
+
+    with patch("dashboard_automation.cli.smtplib.SMTP") as mock_smtp:
+        notificacao = NotificacaoConfig(
+            email=["time@empresa.com"], slack_webhook="https://hooks.slack.com/x"
+        )
+        notifiers = cli.build_notifiers(notificacao)
+
+    assert len(notifiers) == 2
+    mock_smtp.assert_called_once()
+
+
+def test_build_notifiers_returns_empty_list_when_nothing_configured():
+    assert cli.build_notifiers(NotificacaoConfig()) == []
+
+
+def test_main_runs_pipeline_and_prints_url(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "dashboard.yaml"
+    config_path.write_text(
+        """
+id: comissoes-mensal
+nome: "Comissões — Fechamento Mensal"
+query:
+  sql: "SELECT 1"
+  warehouse: "meu-warehouse"
+prompt:
+  template: "templates/insights-padrao.md"
+publicacao:
+  destino: "azure-blob"
+  slug: "comissoes-mensal"
+""",
+        encoding="utf-8",
+    )
+    fake_result = PipelineResult(dashboard_id="comissoes-mensal", url="comissoes-mensal/index.html")
+
+    monkeypatch.setattr(cli, "build_executor", lambda: object())
+    monkeypatch.setattr(cli, "build_generator", lambda: object())
+    monkeypatch.setattr(cli, "build_publisher", lambda destino: object())
+    monkeypatch.setattr(cli, "build_notifiers", lambda notificacao: [])
+    monkeypatch.setattr(cli, "run_dashboard", lambda **kwargs: fake_result)
+    monkeypatch.setattr("sys.argv", ["run-dashboard", str(config_path)])
+
+    cli.main()
+
+    captured = capsys.readouterr()
+    assert "comissoes-mensal/index.html" in captured.out
